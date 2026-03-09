@@ -402,6 +402,10 @@ class MeanReversionStrategy:
         trend = self._trend(token_id)
         in_position = token_id in self._state.positions
 
+        # Reject near-settled prices (settled tokens trade at ~0 or ~1)
+        if price < 0.03 or price > 0.97:
+            return None
+
         if not in_position:
             if side == "up" and trend == "up" and price < BUY_THRESHOLD_UP:
                 return "open"
@@ -536,6 +540,7 @@ class PolymarketFeed:
         self._tick_count = 0
         self._last_status_log = time.monotonic()
         self._last_tick_time: Dict[str, datetime] = {}
+        self._settled_tokens: set = set()  # tokens that have settled — never re-enter
 
     # ── price routing ─────────────────────────────────────────────────────────
 
@@ -612,11 +617,18 @@ class PolymarketFeed:
                 f"[STATUS] total_ticks={self._tick_count}  wallet=${self._state.wallet:.2f}  "
                 f"positions={len(self._state.positions)}  {summary}"
             )
+        token_id = market["token_id"]
+        # Skip tokens that have already settled this session
+        if token_id in self._settled_tokens:
+            return
         sig = self._strategy.signal(market, price)
         if sig == "open":
             self._executor.open_position(market, price)
         elif sig == "close":
             self._executor.close_position(market, price)
+            # If closed near resolution price, mark as settled so we don't re-enter
+            if price >= 0.90 or price <= 0.10:
+                self._settled_tokens.add(token_id)
 
     def _handle_message(self, raw: str):
         try:

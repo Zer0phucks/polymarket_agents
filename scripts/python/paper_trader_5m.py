@@ -347,6 +347,9 @@ class MeanReversionStrategy:
         trend = self._trend(token_id)
         in_position = token_id in self._state.positions
 
+        if price < 0.03 or price > 0.97:
+            return None
+
         if not in_position:
             if side == "up" and trend == "up" and price < BUY_THRESHOLD_UP:
                 return "open"
@@ -475,6 +478,7 @@ class PolymarketFeed:
         self._tick_count = 0
         self._last_status_log = time.monotonic()
         self._last_tick_time: Dict[str, datetime] = {}
+        self._settled_tokens: set = set()
 
     def _record_price(self, token_id: str, price: float):
         history = self._state.price_history.setdefault(token_id, [])
@@ -547,11 +551,16 @@ class PolymarketFeed:
                 f"positions={len(self._state.positions)}  {summary}"
             )
 
+        token_id = market["token_id"]
+        if token_id in self._settled_tokens:
+            return
         sig = self._strategy.signal(market, price)
         if sig == "open":
             self._executor.open_position(market, price)
         elif sig == "close":
             self._executor.close_position(market, price)
+            if price >= 0.90 or price <= 0.10:
+                self._settled_tokens.add(token_id)
 
     def _handle_message(self, raw: str):
         try:
