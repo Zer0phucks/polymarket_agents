@@ -49,8 +49,8 @@ WINDOW_KEYWORDS = ["15 min", "15min", "15 minute", "15-min", "up or down"]
 # Mean-reversion thresholds (YES share price, 0–1 scale)
 BUY_THRESHOLD_UP = 0.40    # Up market: buy YES below this
 SELL_THRESHOLD_UP = 0.60   # Up market: sell YES above this
-BUY_THRESHOLD_DOWN = 0.60  # Down market (inverse): buy YES above this
-SELL_THRESHOLD_DOWN = 0.40 # Down market (inverse): sell YES below this
+BUY_THRESHOLD_DOWN = 0.40  # Down market: buy when token is cheap (same logic as up)
+SELL_THRESHOLD_DOWN = 0.60 # Down market: sell when token has recovered
 
 INITIAL_WALLET = 100.0
 MAX_POSITION_PCT = 0.10          # max 10 % of wallet per trade
@@ -249,6 +249,53 @@ def fetch_crypto_15m_markets() -> List[dict]:
     return matched
 
 
+# ── Combined dashboard writer ─────────────────────────────────────────────────
+
+def _write_combined_dashboard(current_state: dict):
+    """Read all 3 bot state files and write combined dashboard/data.json."""
+    files = {"15m": DATA_FILE, "5m": "data/paper_trades_5m.json", "1h": "data/paper_trades_1h.json"}
+    bots = {}
+    for key, path in files.items():
+        if path == DATA_FILE:
+            bots[key] = current_state
+            continue
+        try:
+            with open(path) as f:
+                bots[key] = json.load(f)
+        except Exception:
+            bots[key] = {"wallet": 100.0, "positions": [], "trades": [],
+                         "stats": {}, "circuit_breaker": False}
+
+    wins = losses = total_trades = open_pos = 0
+    total_pnl = total_wallet = 0.0
+    for d in bots.values():
+        s = d.get("stats", {})
+        wins         += s.get("wins",         0)
+        losses       += s.get("losses",       0)
+        total_pnl    += s.get("total_pnl",    0.0)
+        total_trades += s.get("total_trades", 0)
+        open_pos     += len(d.get("positions", []))
+        total_wallet += d.get("wallet", 100.0)
+
+    total = wins + losses
+    payload = {
+        **bots,
+        "combined": {
+            "total_pnl":      round(total_pnl, 4),
+            "win_rate":       round(wins / total * 100, 1) if total > 0 else 0.0,
+            "total_trades":   total_trades,
+            "wins":           wins,
+            "losses":         losses,
+            "total_wallet":   round(total_wallet, 4),
+            "initial_wallet": 300.0,
+            "open_positions": open_pos,
+        },
+    }
+    os.makedirs("dashboard", exist_ok=True)
+    with open(DASHBOARD_DATA_FILE, "w") as f:
+        json.dump(payload, f, indent=2)
+
+
 # ── Persistent state ──────────────────────────────────────────────────────────
 
 class TradingState:
@@ -298,38 +345,7 @@ class TradingState:
         }
         with open(DATA_FILE, "w") as f:
             json.dump(state, f, indent=2)
-
-        # Write combined dashboard/data.json for Vercel static hosting
-        os.makedirs("dashboard", exist_ok=True)
-        try:
-            with open("data/paper_trades_5m.json") as f:
-                other = json.load(f)
-        except Exception:
-            other = {"wallet": 100.0, "positions": [], "trades": [], "stats": {}, "circuit_breaker": False}
-        _write_combined_dashboard(state, other)
-
-def _write_combined_dashboard(s15: dict, s5: dict):
-    st15 = s15.get("stats", {})
-    st5  = s5.get("stats",  {})
-    wins   = st15.get("wins",   0) + st5.get("wins",   0)
-    losses = st15.get("losses", 0) + st5.get("losses", 0)
-    total  = wins + losses
-    combined = {
-        "15m": s15,
-        "5m":  s5,
-        "combined": {
-            "total_pnl":      round(st15.get("total_pnl", 0.0) + st5.get("total_pnl", 0.0), 4),
-            "win_rate":       round(wins / total * 100, 1) if total > 0 else 0.0,
-            "total_trades":   st15.get("total_trades", 0) + st5.get("total_trades", 0),
-            "wins":           wins,
-            "losses":         losses,
-            "total_wallet":   round(s15.get("wallet", 100.0) + s5.get("wallet", 100.0), 4),
-            "initial_wallet": 200.0,
-            "open_positions": len(s15.get("positions", [])) + len(s5.get("positions", [])),
-        },
-    }
-    with open(DASHBOARD_DATA_FILE, "w") as f:
-        json.dump(combined, f, indent=2)
+        _write_combined_dashboard(state)
 
     # ── analytics ─────────────────────────────────────────────────────────────
 
@@ -389,7 +405,7 @@ class MeanReversionStrategy:
         if not in_position:
             if side == "up" and trend == "up" and price < BUY_THRESHOLD_UP:
                 return "open"
-            if side == "down" and trend == "up" and price > BUY_THRESHOLD_DOWN:
+            if side == "down" and trend == "up" and price < BUY_THRESHOLD_DOWN:
                 return "open"
         else:
             pos = self._state.positions.get(token_id)
@@ -400,7 +416,7 @@ class MeanReversionStrategy:
                     return None
             if side == "up" and price > SELL_THRESHOLD_UP:
                 return "close"
-            if side == "down" and price < SELL_THRESHOLD_DOWN:
+            if side == "down" and price > SELL_THRESHOLD_DOWN:
                 return "close"
 
         return None
@@ -712,7 +728,7 @@ async def main():
     log.info("  Polymarket Paper Trader  |  15-min Crypto Up/Down  ")
     log.info(f"  Strategy : Mean-Reversion  |  Starting wallet: ${INITIAL_WALLET}")
     log.info(f"  Up  thresholds : buy <{BUY_THRESHOLD_UP}  sell >{SELL_THRESHOLD_UP}")
-    log.info(f"  Down thresholds: buy >{BUY_THRESHOLD_DOWN}  sell <{SELL_THRESHOLD_DOWN}")
+    log.info(f"  Down thresholds: buy <{BUY_THRESHOLD_DOWN}  sell >{SELL_THRESHOLD_DOWN}")
     log.info(f"  Circuit breaker: {CIRCUIT_BREAKER_LOSSES} consecutive losses")
     log.info("=" * 62)
 

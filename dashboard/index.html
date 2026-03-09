@@ -103,8 +103,6 @@
       border-radius: 10px;
       padding: 16px 18px;
     }
-    .card.accent-blue  { border-color: rgba(88,166,255,0.3); }
-    .card.accent-purple{ border-color: rgba(188,140,255,0.3); }
     .card-label {
       font-size: 0.68rem;
       text-transform: uppercase;
@@ -121,7 +119,43 @@
     .neg    { color: var(--red); }
     .blue   { color: var(--blue); }
     .purple { color: var(--purple); }
+    .orange { color: var(--orange); }
     .white  { color: var(--text); }
+
+    /* ── Bot panels ── */
+    .bot-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 1000px) { .bot-grid { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 650px)  { .bot-grid { grid-template-columns: 1fr; } }
+    .bot-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 20px;
+    }
+    .bot-card.bot-15m { border-top: 2px solid var(--blue); }
+    .bot-card.bot-5m  { border-top: 2px solid var(--purple); }
+    .bot-card.bot-1h  { border-top: 2px solid var(--orange); }
+    .bot-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .bot-title { font-size: 0.9rem; font-weight: 700; }
+    .bot-wallet { font-size: 1.1rem; font-weight: 700; }
+
+    /* ── Mini stat row inside bot card ── */
+    .mini-stats { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+    .mini-stat .val { font-size: 1.05rem; font-weight: 700; }
+    .mini-stat .lbl { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; }
+
+    /* ── Chart ── */
+    .chart-canvas-wrap { height: 180px; }
 
     /* ── Tabs ── */
     .tabs {
@@ -147,61 +181,6 @@
     .tab.active { color: var(--blue); border-bottom-color: var(--blue); }
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
-
-    /* ── Chart ── */
-    .chart-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 14px;
-      margin-bottom: 24px;
-    }
-    @media (max-width: 700px) { .chart-row { grid-template-columns: 1fr; } }
-    .chart-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 18px 18px 14px;
-    }
-    .chart-title {
-      font-size: 0.78rem;
-      font-weight: 600;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 12px;
-    }
-    .chart-canvas-wrap { height: 220px; }
-
-    /* ── Bot panels ── */
-    .bot-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 14px;
-      margin-bottom: 24px;
-    }
-    @media (max-width: 900px) { .bot-grid { grid-template-columns: 1fr; } }
-    .bot-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 18px 20px;
-    }
-    .bot-card.bot-15m { border-top: 2px solid var(--blue); }
-    .bot-card.bot-5m  { border-top: 2px solid var(--purple); }
-    .bot-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 14px;
-    }
-    .bot-title { font-size: 0.9rem; font-weight: 700; }
-    .bot-wallet { font-size: 1.1rem; font-weight: 700; }
-
-    /* ── Mini stat row inside bot card ── */
-    .mini-stats { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
-    .mini-stat { }
-    .mini-stat .val { font-size: 1.05rem; font-weight: 700; }
-    .mini-stat .lbl { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; }
 
     /* ── Tables ── */
     .section { margin-bottom: 28px; }
@@ -252,6 +231,7 @@
     .b-down   { background: rgba(248,81,73,0.12);   color: var(--red); }
     .b-15m    { background: rgba(88,166,255,0.12);  color: var(--blue); }
     .b-5m     { background: rgba(188,140,255,0.12); color: var(--purple); }
+    .b-1h     { background: rgba(240,136,62,0.12);  color: var(--orange); }
 
     /* ── Footer ── */
     .footer { color: var(--muted); font-size: 0.73rem; margin-top: 10px; }
@@ -268,7 +248,7 @@
       <button class="btn" onclick="loadData()">↻ Refresh</button>
     </div>
   </div>
-  <p class="subtitle">Polymarket · 15-min &amp; 5-min Crypto Up/Down · Mean-Reversion Strategy</p>
+  <p class="subtitle">Polymarket · 15-min, 5-min &amp; 1-hour Crypto Up/Down · Mean-Reversion Strategy</p>
 
   <!-- Circuit-breaker banners -->
   <div class="banner" id="banner-15m">
@@ -279,13 +259,17 @@
     <span>⛔ <strong>5m Circuit Breaker Active</strong> — Trading halted after 3 consecutive losses.</span>
     <button class="btn btn-red" onclick="resetBreaker('5m')">Reset &amp; Resume</button>
   </div>
+  <div class="banner" id="banner-1h">
+    <span>⛔ <strong>1h Circuit Breaker Active</strong> — Trading halted after 3 consecutive losses.</span>
+    <button class="btn btn-red" onclick="resetBreaker('1h')">Reset &amp; Resume</button>
+  </div>
 
   <!-- Combined stats -->
-  <div class="section-label">Combined — Both Bots</div>
+  <div class="section-label">Combined — All Three Bots</div>
   <div class="stats-grid">
     <div class="card">
       <div class="card-label">Total Wallet</div>
-      <div class="card-value blue" id="c-wallet">$200.00</div>
+      <div class="card-value blue" id="c-wallet">$300.00</div>
     </div>
     <div class="card">
       <div class="card-label">Combined P&amp;L</div>
@@ -361,6 +345,31 @@
         </div>
       </div>
       <div class="chart-canvas-wrap"><canvas id="chart-5m"></canvas></div>
+    </div>
+    <div class="bot-card bot-1h">
+      <div class="bot-header">
+        <span class="bot-title">1-hour Bot <span class="badge b-1h">1H</span></span>
+        <span class="bot-wallet orange" id="b1h-wallet">$100.00</span>
+      </div>
+      <div class="mini-stats">
+        <div class="mini-stat">
+          <div class="val" id="b1h-pnl">$0.00</div>
+          <div class="lbl">P&amp;L</div>
+        </div>
+        <div class="mini-stat">
+          <div class="val" id="b1h-wr">0%</div>
+          <div class="lbl">Win Rate</div>
+        </div>
+        <div class="mini-stat">
+          <div class="val" id="b1h-trades">0</div>
+          <div class="lbl">Trades</div>
+        </div>
+        <div class="mini-stat">
+          <div class="val" id="b1h-open">0</div>
+          <div class="lbl">Open</div>
+        </div>
+      </div>
+      <div class="chart-canvas-wrap"><canvas id="chart-1h"></canvas></div>
     </div>
   </div>
 
@@ -461,18 +470,16 @@
 
   // ── Data loading ──────────────────────────────────────────────────────────────
   async function loadData() {
-    // Try static data.json first (Vercel), then local API as fallback
     const urls = [`./data.json?t=${Date.now()}`, `/api/state?t=${Date.now()}`];
     for (const url of urls) {
       try {
         const res = await fetch(url);
         if (!res.ok) continue;
         const data = await res.json();
-        // Handle both combined format {"15m":…,"5m":…} and legacy single-bot format
         if (data['15m'] !== undefined) {
           render(data);
         } else {
-          render({ '15m': data, '5m': null, combined: null });
+          render({ '15m': data, '5m': null, '1h': null, combined: null });
         }
         return;
       } catch (_) {}
@@ -495,15 +502,17 @@
   function render(data) {
     const d15  = data['15m'] || {};
     const d5   = data['5m']  || {};
-    const comb = data.combined || buildFallbackCombined(d15, d5);
+    const d1h  = data['1h']  || {};
+    const comb = data.combined || buildFallbackCombined(d15, d5, d1h);
 
     // Circuit-breaker banners
     $('banner-15m').style.display = d15.circuit_breaker ? 'flex' : 'none';
     $('banner-5m').style.display  = d5.circuit_breaker  ? 'flex' : 'none';
+    $('banner-1h').style.display  = d1h.circuit_breaker ? 'flex' : 'none';
 
     // Combined stats
     const cpnl = comb.total_pnl ?? 0;
-    $('c-wallet').textContent  = `$${(comb.total_wallet ?? 200).toFixed(2)}`;
+    $('c-wallet').textContent  = `$${(comb.total_wallet ?? 300).toFixed(2)}`;
     const cpnlEl = $('c-pnl');
     cpnlEl.textContent  = fmtPnl(cpnl, true);
     cpnlEl.className = `card-value ${pnlClass(cpnl)}`;
@@ -515,42 +524,43 @@
     cwl.className = 'card-value white';
 
     // Per-bot cards
-    renderBotCard('15m', d15, 'blue');
-    renderBotCard('5m',  d5,  'purple');
+    renderBotCard('15m', d15, 'blue',   'b15');
+    renderBotCard('5m',  d5,  'purple', 'b5');
+    renderBotCard('1h',  d1h, 'orange', 'b1h');
 
     // Charts
-    renderChart('chart-15m', d15.trades || [], '#58a6ff', 'rgba(88,166,255,0.1)', d15.stats?.initial_wallet ?? 100);
+    renderChart('chart-15m', d15.trades || [], '#58a6ff', 'rgba(88,166,255,0.1)',  d15.stats?.initial_wallet ?? 100);
     renderChart('chart-5m',  d5.trades  || [], '#bc8cff', 'rgba(188,140,255,0.1)', d5.stats?.initial_wallet ?? 100);
+    renderChart('chart-1h',  d1h.trades || [], '#f0883e', 'rgba(240,136,62,0.1)',  d1h.stats?.initial_wallet ?? 100);
 
-    // Tables — merge positions and trades from both bots
-    renderPositions(d15.positions || [], d5.positions || []);
-    renderTrades(d15.trades || [], d5.trades || []);
+    // Tables
+    renderPositions(d15.positions || [], d5.positions || [], d1h.positions || []);
+    renderTrades(d15.trades || [], d5.trades || [], d1h.trades || []);
 
     // Footer
-    const timestamps = [d15.last_updated, d5.last_updated].filter(Boolean);
+    const timestamps = [d15.last_updated, d5.last_updated, d1h.last_updated].filter(Boolean);
     const latest = timestamps.sort().pop();
     $('footer').textContent = latest
       ? `Last updated: ${new Date(latest).toLocaleString()}`
       : 'Waiting for first trade data…';
   }
 
-  function buildFallbackCombined(d15, d5) {
-    const s15 = d15.stats || {}, s5 = d5.stats || {};
-    const wins = (s15.wins||0) + (s5.wins||0);
-    const losses = (s15.losses||0) + (s5.losses||0);
-    const total = wins + losses;
+  function buildFallbackCombined(d15, d5, d1h) {
+    const bots = [d15, d5, d1h];
+    const wins   = bots.reduce((s, d) => s + (d.stats?.wins   || 0), 0);
+    const losses = bots.reduce((s, d) => s + (d.stats?.losses || 0), 0);
+    const total  = wins + losses;
     return {
-      total_pnl: ((s15.total_pnl||0) + (s5.total_pnl||0)),
-      win_rate: total > 0 ? Math.round(wins/total*1000)/10 : 0,
-      total_trades: (s15.total_trades||0) + (s5.total_trades||0),
+      total_pnl:      bots.reduce((s, d) => s + (d.stats?.total_pnl || 0), 0),
+      win_rate:       total > 0 ? Math.round(wins / total * 1000) / 10 : 0,
+      total_trades:   bots.reduce((s, d) => s + (d.stats?.total_trades || 0), 0),
       wins, losses,
-      total_wallet: (d15.wallet||100) + (d5.wallet||100),
-      open_positions: (d15.positions||[]).length + (d5.positions||[]).length,
+      total_wallet:   bots.reduce((s, d) => s + (d.wallet || 100), 0),
+      open_positions: bots.reduce((s, d) => s + (d.positions || []).length, 0),
     };
   }
 
-  function renderBotCard(bot, d, colorClass) {
-    const prefix = 'b' + (bot === '15m' ? '15' : '5');
+  function renderBotCard(bot, d, colorClass, prefix) {
     const s = d.stats || {};
     const pnl = s.total_pnl ?? 0;
     $(`${prefix}-wallet`).textContent = `$${(d.wallet ?? 100).toFixed(2)}`;
@@ -617,10 +627,11 @@
   }
 
   // ── Open positions table ──────────────────────────────────────────────────────
-  function renderPositions(pos15, pos5) {
+  function renderPositions(pos15, pos5, pos1h) {
     const all = [
       ...pos15.map(p => ({ ...p, _bot: '15m' })),
       ...pos5.map(p =>  ({ ...p, _bot: '5m' })),
+      ...pos1h.map(p => ({ ...p, _bot: '1h' })),
     ];
     const body = $('pos-body');
     if (!all.length) {
@@ -645,10 +656,11 @@
   }
 
   // ── Closed trades table ───────────────────────────────────────────────────────
-  function renderTrades(t15, t5) {
+  function renderTrades(t15, t5, t1h) {
     const closed = [
       ...t15.filter(t => t.action === 'close').map(t => ({ ...t, _bot: '15m' })),
       ...t5.filter(t  => t.action === 'close').map(t => ({ ...t, _bot: '5m' })),
+      ...t1h.filter(t => t.action === 'close').map(t => ({ ...t, _bot: '1h' })),
     ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 100);
 
     const body = $('trades-body');
@@ -677,7 +689,7 @@
 
   // ── Boot ──────────────────────────────────────────────────────────────────────
   loadData();
-  setInterval(loadData, 5_000);   // live update every 5 s
+  setInterval(loadData, 5_000);
 </script>
 </body>
 </html>

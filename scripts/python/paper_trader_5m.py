@@ -45,8 +45,8 @@ CRYPTO_KEYWORDS = ["bitcoin", "btc", "ethereum", "eth", "solana", "sol", "xrp", 
 # Mean-reversion thresholds (YES share price, 0–1 scale)
 BUY_THRESHOLD_UP = 0.40
 SELL_THRESHOLD_UP = 0.60
-BUY_THRESHOLD_DOWN = 0.60
-SELL_THRESHOLD_DOWN = 0.40
+BUY_THRESHOLD_DOWN = 0.40
+SELL_THRESHOLD_DOWN = 0.60
 
 INITIAL_WALLET = 100.0
 MAX_POSITION_PCT = 0.10
@@ -219,26 +219,35 @@ def fetch_crypto_5m_markets() -> List[dict]:
     return matched
 
 
-# ── Combined dashboard writer (module-level, used by both bots) ───────────────
+# ── Combined dashboard writer (module-level, reads all 3 bot state files) ─────
 
-def _write_combined_dashboard(s15: dict, s5: dict):
-    st15 = s15.get("stats", {})
-    st5  = s5.get("stats",  {})
-    wins   = st15.get("wins",   0) + st5.get("wins",   0)
-    losses = st15.get("losses", 0) + st5.get("losses", 0)
+def _write_combined_dashboard():
+    files = {
+        "15m": "data/paper_trades.json",
+        "5m":  DATA_FILE,
+        "1h":  "data/paper_trades_1h.json",
+    }
+    bots = {}
+    for key, path in files.items():
+        try:
+            with open(path) as f:
+                bots[key] = json.load(f)
+        except Exception:
+            bots[key] = {"wallet": 100.0, "positions": [], "trades": [], "stats": {}, "circuit_breaker": False}
+    wins   = sum(bots[k].get("stats", {}).get("wins",   0) for k in bots)
+    losses = sum(bots[k].get("stats", {}).get("losses", 0) for k in bots)
     total  = wins + losses
     payload = {
-        "15m": s15,
-        "5m":  s5,
+        **bots,
         "combined": {
-            "total_pnl":      round(st15.get("total_pnl", 0.0) + st5.get("total_pnl", 0.0), 4),
+            "total_pnl":      round(sum(bots[k].get("stats", {}).get("total_pnl", 0.0) for k in bots), 4),
             "win_rate":       round(wins / total * 100, 1) if total > 0 else 0.0,
-            "total_trades":   st15.get("total_trades", 0) + st5.get("total_trades", 0),
+            "total_trades":   sum(bots[k].get("stats", {}).get("total_trades", 0) for k in bots),
             "wins":           wins,
             "losses":         losses,
-            "total_wallet":   round(s15.get("wallet", 100.0) + s5.get("wallet", 100.0), 4),
-            "initial_wallet": 200.0,
-            "open_positions": len(s15.get("positions", [])) + len(s5.get("positions", [])),
+            "total_wallet":   round(sum(bots[k].get("wallet", 100.0) for k in bots), 4),
+            "initial_wallet": 300.0,
+            "open_positions": sum(len(bots[k].get("positions", [])) for k in bots),
         },
     }
     os.makedirs("dashboard", exist_ok=True)
@@ -293,12 +302,7 @@ class TradingState:
         }
         with open(DATA_FILE, "w") as f:
             json.dump(state, f, indent=2)
-        try:
-            with open("data/paper_trades.json") as f:
-                other = json.load(f)
-        except Exception:
-            other = {"wallet": 100.0, "positions": [], "trades": [], "stats": {}, "circuit_breaker": False}
-        _write_combined_dashboard(other, state)
+        _write_combined_dashboard()
 
     def compute_stats(self) -> dict:
         closed = [t for t in self.trades if t.get("pnl") is not None]
@@ -346,7 +350,7 @@ class MeanReversionStrategy:
         if not in_position:
             if side == "up" and trend == "up" and price < BUY_THRESHOLD_UP:
                 return "open"
-            if side == "down" and trend == "up" and price > BUY_THRESHOLD_DOWN:
+            if side == "down" and trend == "up" and price < BUY_THRESHOLD_DOWN:
                 return "open"
         else:
             pos = self._state.positions.get(token_id)
@@ -356,7 +360,7 @@ class MeanReversionStrategy:
                     return None
             if side == "up" and price > SELL_THRESHOLD_UP:
                 return "close"
-            if side == "down" and price < SELL_THRESHOLD_DOWN:
+            if side == "down" and price > SELL_THRESHOLD_DOWN:
                 return "close"
 
         return None
@@ -650,7 +654,7 @@ async def main():
     log.info("  Polymarket Paper Trader  |  5-min Crypto Up/Down  ")
     log.info(f"  Strategy : Mean-Reversion  |  Starting wallet: ${INITIAL_WALLET}")
     log.info(f"  Up  thresholds : buy <{BUY_THRESHOLD_UP}  sell >{SELL_THRESHOLD_UP}")
-    log.info(f"  Down thresholds: buy >{BUY_THRESHOLD_DOWN}  sell <{SELL_THRESHOLD_DOWN}")
+    log.info(f"  Down thresholds: buy <{BUY_THRESHOLD_DOWN}  sell >{SELL_THRESHOLD_DOWN}")
     log.info(f"  Circuit breaker: {CIRCUIT_BREAKER_LOSSES} consecutive losses")
     log.info("=" * 62)
 

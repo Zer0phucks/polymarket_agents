@@ -25,6 +25,7 @@ from urllib.parse import urlparse
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_15M       = BASE_DIR / "data" / "paper_trades.json"
 DATA_5M        = BASE_DIR / "data" / "paper_trades_5m.json"
+DATA_1H        = BASE_DIR / "data" / "paper_trades_1h.json"
 DASHBOARD_HTML = BASE_DIR / "dashboard" / "index.html"
 INITIAL_WALLET = 100.0
 
@@ -52,15 +53,13 @@ def _load(path: Path) -> dict:
         return json.load(f)
 
 
-def _combined(s15: dict, s5: dict) -> dict:
-    st15 = s15.get("stats", {})
-    st5  = s5.get("stats",  {})
-    wins   = st15.get("wins",   0) + st5.get("wins",   0)
-    losses = st15.get("losses", 0) + st5.get("losses", 0)
-    total  = st15.get("total_trades", 0) + st5.get("total_trades", 0)
-    pnl    = round(st15.get("total_pnl", 0.0) + st5.get("total_pnl", 0.0), 4)
-    wallet = round(s15.get("wallet", INITIAL_WALLET) + s5.get("wallet", INITIAL_WALLET), 4)
-    open_pos = len(s15.get("positions", [])) + len(s5.get("positions", []))
+def _combined(bots: list) -> dict:
+    wins   = sum(b.get("stats", {}).get("wins",         0)   for b in bots)
+    losses = sum(b.get("stats", {}).get("losses",       0)   for b in bots)
+    total  = sum(b.get("stats", {}).get("total_trades", 0)   for b in bots)
+    pnl    = round(sum(b.get("stats", {}).get("total_pnl", 0.0) for b in bots), 4)
+    wallet = round(sum(b.get("wallet", INITIAL_WALLET) for b in bots), 4)
+    open_pos = sum(len(b.get("positions", [])) for b in bots)
     return {
         "total_pnl":      pnl,
         "win_rate":       round(wins / total * 100, 1) if total > 0 else 0.0,
@@ -68,7 +67,7 @@ def _combined(s15: dict, s5: dict) -> dict:
         "wins":           wins,
         "losses":         losses,
         "total_wallet":   wallet,
-        "initial_wallet": INITIAL_WALLET * 2,
+        "initial_wallet": INITIAL_WALLET * 3,
         "open_positions": open_pos,
     }
 
@@ -102,7 +101,8 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/state":
             s15 = _load(DATA_15M)
             s5  = _load(DATA_5M)
-            self._json({"15m": s15, "5m": s5, "combined": _combined(s15, s5)})
+            s1h = _load(DATA_1H)
+            self._json({"15m": s15, "5m": s5, "1h": s1h, "combined": _combined([s15, s5, s1h])})
 
         elif path == "/api/15m":
             self._json(_load(DATA_15M))
@@ -110,15 +110,18 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/5m":
             self._json(_load(DATA_5M))
 
+        elif path == "/api/1h":
+            self._json(_load(DATA_1H))
+
         else:
             self._send(404, b"Not found", "text/plain")
 
     def do_POST(self):
         path = urlparse(self.path).path
 
-        if path in ("/api/reset/15m", "/api/reset/5m"):
+        if path in ("/api/reset/15m", "/api/reset/5m", "/api/reset/1h"):
             bot = path.split("/")[-1]
-            data_path = DATA_15M if bot == "15m" else DATA_5M
+            data_path = {"15m": DATA_15M, "5m": DATA_5M, "1h": DATA_1H}[bot]
             data = _load(data_path)
             data["circuit_breaker"] = False
             data["consecutive_losses"] = 0
