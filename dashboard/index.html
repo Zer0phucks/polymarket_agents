@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Polymarket Paper Trader</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg:      #0d1117;
+      --surface: #161b22;
+      --surface2:#1c2128;
+      --border:  #30363d;
+      --text:    #e6edf3;
+      --muted:   #8b949e;
+      --green:   #3fb950;
+      --red:     #f85149;
+      --blue:    #58a6ff;
+      --purple:  #bc8cff;
+      --yellow:  #d29922;
+      --orange:  #f0883e;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      padding: 28px 24px 48px;
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+    h1 { font-size: 1.45rem; font-weight: 700; letter-spacing: -0.02em; }
+    .subtitle { color: var(--muted); font-size: 0.85rem; margin-bottom: 24px; }
+    .header-actions { display: flex; gap: 8px; align-items: center; }
+    .btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .btn:hover { border-color: var(--blue); color: var(--blue); }
+    .btn-red:hover { border-color: var(--red); color: var(--red); }
+    .live-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%,100% { opacity: 1; } 50% { opacity: 0.3; }
+    }
+
+    /* ── Circuit-breaker banner ── */
+    .banner {
+      background: rgba(248, 81, 73, 0.1);
+      border: 1px solid var(--red);
+      border-radius: 8px;
+      padding: 12px 18px;
+      margin-bottom: 20px;
+      color: var(--red);
+      font-size: 0.875rem;
+      display: none;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* ── Combined stats ── */
+    .section-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 10px;
+      margin-top: 26px;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 18px;
+    }
+    .card.accent-blue  { border-color: rgba(88,166,255,0.3); }
+    .card.accent-purple{ border-color: rgba(188,140,255,0.3); }
+    .card-label {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .card-value {
+      font-size: 1.8rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .pos    { color: var(--green); }
+    .neg    { color: var(--red); }
+    .blue   { color: var(--blue); }
+    .purple { color: var(--purple); }
+    .white  { color: var(--text); }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 20px;
+      margin-top: 28px;
+    }
+    .tab {
+      padding: 8px 18px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      background: none;
+      color: var(--muted);
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Chart ── */
+    .chart-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 700px) { .chart-row { grid-template-columns: 1fr; } }
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 18px 14px;
+    }
+    .chart-title {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 12px;
+    }
+    .chart-canvas-wrap { height: 220px; }
+
+    /* ── Bot panels ── */
+    .bot-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 900px) { .bot-grid { grid-template-columns: 1fr; } }
+    .bot-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 20px;
+    }
+    .bot-card.bot-15m { border-top: 2px solid var(--blue); }
+    .bot-card.bot-5m  { border-top: 2px solid var(--purple); }
+    .bot-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .bot-title { font-size: 0.9rem; font-weight: 700; }
+    .bot-wallet { font-size: 1.1rem; font-weight: 700; }
+
+    /* ── Mini stat row inside bot card ── */
+    .mini-stats { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+    .mini-stat { }
+    .mini-stat .val { font-size: 1.05rem; font-weight: 700; }
+    .mini-stat .lbl { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; }
+
+    /* ── Tables ── */
+    .section { margin-bottom: 28px; }
+    .section-title {
+      font-size: 0.88rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: var(--text);
+    }
+    .table-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    thead { background: rgba(255,255,255,0.03); }
+    th {
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 0.67rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    td {
+      padding: 10px 14px;
+      font-size: 0.82rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    tr:last-child td { border-bottom: none; }
+    .empty { color: var(--muted); padding: 20px 14px; }
+
+    /* ── Badges ── */
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.67rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    .b-up     { background: rgba(63,185,80,0.12);   color: var(--green); }
+    .b-down   { background: rgba(248,81,73,0.12);   color: var(--red); }
+    .b-15m    { background: rgba(88,166,255,0.12);  color: var(--blue); }
+    .b-5m     { background: rgba(188,140,255,0.12); color: var(--purple); }
+
+    /* ── Footer ── */
+    .footer { color: var(--muted); font-size: 0.73rem; margin-top: 10px; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div>
+      <h1>📈 Paper Trader Dashboard</h1>
+    </div>
+    <div class="header-actions">
+      <div class="live-dot" title="Live — updates every 5s"></div>
+      <button class="btn" onclick="loadData()">↻ Refresh</button>
+    </div>
+  </div>
+  <p class="subtitle">Polymarket · 15-min &amp; 5-min Crypto Up/Down · Mean-Reversion Strategy</p>
+
+  <!-- Circuit-breaker banners -->
+  <div class="banner" id="banner-15m">
+    <span>⛔ <strong>15m Circuit Breaker Active</strong> — Trading halted after 3 consecutive losses.</span>
+    <button class="btn btn-red" onclick="resetBreaker('15m')">Reset &amp; Resume</button>
+  </div>
+  <div class="banner" id="banner-5m">
+    <span>⛔ <strong>5m Circuit Breaker Active</strong> — Trading halted after 3 consecutive losses.</span>
+    <button class="btn btn-red" onclick="resetBreaker('5m')">Reset &amp; Resume</button>
+  </div>
+
+  <!-- Combined stats -->
+  <div class="section-label">Combined — Both Bots</div>
+  <div class="stats-grid">
+    <div class="card">
+      <div class="card-label">Total Wallet</div>
+      <div class="card-value blue" id="c-wallet">$200.00</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Combined P&amp;L</div>
+      <div class="card-value white" id="c-pnl">$0.00</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Combined Win Rate</div>
+      <div class="card-value blue" id="c-winrate">0%</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Total Closed Trades</div>
+      <div class="card-value blue" id="c-trades">0</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Wins / Losses</div>
+      <div class="card-value white" id="c-winloss">0 / 0</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Open Positions</div>
+      <div class="card-value blue" id="c-open">0</div>
+    </div>
+  </div>
+
+  <!-- Per-bot summary cards -->
+  <div class="section-label">Per-Bot Snapshot</div>
+  <div class="bot-grid">
+    <div class="bot-card bot-15m">
+      <div class="bot-header">
+        <span class="bot-title">15-min Bot <span class="badge b-15m">15M</span></span>
+        <span class="bot-wallet blue" id="b15-wallet">$100.00</span>
+      </div>
+      <div class="mini-stats">
+        <div class="mini-stat">
+          <div class="val" id="b15-pnl">$0.00</div>
+          <div class="lbl">P&amp;L</div>
+        </div>
+        <div class="mini-stat">
+          <div class="val" id="b15-wr">0%</div>
+          <div class="lbl">Win Rate</div>
+        </div>
+        <div class="mini-stat">
+          <div class="val" id="b15-trades">0</div>
+          <div class="lbl">Trades</div>
+        </div>
+        <div class="mini-stat">
+          <div class="val" id="b15-open">0</div>
+          <div class="lbl">Open</div>
+        </div>
+      </div>
+      <div class="chart-canvas-wrap"><canvas id="chart-15m"></canvas></div>
+    </div>
+    <div class="bot-card bot-5m">
+      <div class="bot-header">
+        <span class="bot-title">5-min Bot <span class="badge b-5m">5M</span></span>
+        <span class="bot-wallet purple" id="b5-wallet">$100.00</span>
+      </div>
+      <div class="mini-stats">
+        <div class="mini-stat">
+          <div class="val" id="b5-pnl">$0.00</div>
+          <div class="lbl">P&amp;L</div>
+        </div>
+        <div class="mini-stat">
+          <div class="val" id="b5-wr">0%</div>
+          <div class="lbl">Win Rate</div>
+        </div>
+        <div class="mini-stat">
+          <div class="val" id="b5-trades">0</div>
+          <div class="lbl">Trades</div>
+        </div>
+        <div class="mini-stat">
+          <div class="val" id="b5-open">0</div>
+          <div class="lbl">Open</div>
+        </div>
+      </div>
+      <div class="chart-canvas-wrap"><canvas id="chart-5m"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Tabs: Open Positions / Trade Log -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('positions')">Open Positions</button>
+    <button class="tab" onclick="switchTab('trades')">Trade Log</button>
+  </div>
+
+  <div id="tab-positions" class="tab-panel active">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Bot</th>
+            <th>Asset</th>
+            <th>Side</th>
+            <th>Entry</th>
+            <th>Size (USD)</th>
+            <th>Shares</th>
+            <th>Opened</th>
+            <th>Question</th>
+          </tr>
+        </thead>
+        <tbody id="pos-body">
+          <tr><td class="empty" colspan="8">No open positions</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="tab-trades" class="tab-panel">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Bot</th>
+            <th>Time</th>
+            <th>Asset</th>
+            <th>Side</th>
+            <th>Entry</th>
+            <th>Exit</th>
+            <th>Size (USD)</th>
+            <th>P&amp;L</th>
+          </tr>
+        </thead>
+        <tbody id="trades-body">
+          <tr><td class="empty" colspan="8">No closed trades yet</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <p class="footer" id="footer"></p>
+
+<script>
+  // ── State ────────────────────────────────────────────────────────────────────
+  const charts = {};
+  let activeTab = 'positions';
+
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+  const $ = id => document.getElementById(id);
+
+  function fmtPnl(n, short = false) {
+    if (n == null) return '—';
+    const abs = Math.abs(n).toFixed(short ? 2 : 4);
+    return (n >= 0 ? '+$' : '-$') + abs;
+  }
+
+  function fmtTime(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleString(undefined, {
+      month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+  }
+
+  function sideBadge(side) {
+    return `<span class="badge b-${side}">${side.toUpperCase()}</span>`;
+  }
+
+  function botBadge(bot) {
+    return `<span class="badge b-${bot}">${bot.toUpperCase()}</span>`;
+  }
+
+  function pnlClass(n) { return n >= 0 ? 'pos' : 'neg'; }
+
+  // ── Tab switching ─────────────────────────────────────────────────────────────
+  function switchTab(name) {
+    activeTab = name;
+    document.querySelectorAll('.tab').forEach((t, i) => {
+      const names = ['positions', 'trades'];
+      t.classList.toggle('active', names[i] === name);
+    });
+    $('tab-positions').classList.toggle('active', name === 'positions');
+    $('tab-trades').classList.toggle('active', name === 'trades');
+  }
+
+  // ── Data loading ──────────────────────────────────────────────────────────────
+  async function loadData() {
+    // Try static data.json first (Vercel), then local API as fallback
+    const urls = [`./data.json?t=${Date.now()}`, `/api/state?t=${Date.now()}`];
+    for (const url of urls) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const data = await res.json();
+        // Handle both combined format {"15m":…,"5m":…} and legacy single-bot format
+        if (data['15m'] !== undefined) {
+          render(data);
+        } else {
+          render({ '15m': data, '5m': null, combined: null });
+        }
+        return;
+      } catch (_) {}
+    }
+    $('footer').textContent = `⚠ Could not load data — is the bot running?`;
+  }
+
+  // ── Circuit breaker reset ─────────────────────────────────────────────────────
+  async function resetBreaker(bot) {
+    try {
+      const res = await fetch(`/api/reset/${bot}`, { method: 'POST' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await loadData();
+    } catch (e) {
+      alert(`Reset failed: ${e.message}`);
+    }
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────────
+  function render(data) {
+    const d15  = data['15m'] || {};
+    const d5   = data['5m']  || {};
+    const comb = data.combined || buildFallbackCombined(d15, d5);
+
+    // Circuit-breaker banners
+    $('banner-15m').style.display = d15.circuit_breaker ? 'flex' : 'none';
+    $('banner-5m').style.display  = d5.circuit_breaker  ? 'flex' : 'none';
+
+    // Combined stats
+    const cpnl = comb.total_pnl ?? 0;
+    $('c-wallet').textContent  = `$${(comb.total_wallet ?? 200).toFixed(2)}`;
+    const cpnlEl = $('c-pnl');
+    cpnlEl.textContent  = fmtPnl(cpnl, true);
+    cpnlEl.className = `card-value ${pnlClass(cpnl)}`;
+    $('c-winrate').textContent = `${comb.win_rate ?? 0}%`;
+    $('c-trades').textContent  = comb.total_trades ?? 0;
+    $('c-open').textContent    = comb.open_positions ?? 0;
+    const cwl = $('c-winloss');
+    cwl.innerHTML = `<span class="pos">${comb.wins ?? 0}</span> / <span class="neg">${comb.losses ?? 0}</span>`;
+    cwl.className = 'card-value white';
+
+    // Per-bot cards
+    renderBotCard('15m', d15, 'blue');
+    renderBotCard('5m',  d5,  'purple');
+
+    // Charts
+    renderChart('chart-15m', d15.trades || [], '#58a6ff', 'rgba(88,166,255,0.1)', d15.stats?.initial_wallet ?? 100);
+    renderChart('chart-5m',  d5.trades  || [], '#bc8cff', 'rgba(188,140,255,0.1)', d5.stats?.initial_wallet ?? 100);
+
+    // Tables — merge positions and trades from both bots
+    renderPositions(d15.positions || [], d5.positions || []);
+    renderTrades(d15.trades || [], d5.trades || []);
+
+    // Footer
+    const timestamps = [d15.last_updated, d5.last_updated].filter(Boolean);
+    const latest = timestamps.sort().pop();
+    $('footer').textContent = latest
+      ? `Last updated: ${new Date(latest).toLocaleString()}`
+      : 'Waiting for first trade data…';
+  }
+
+  function buildFallbackCombined(d15, d5) {
+    const s15 = d15.stats || {}, s5 = d5.stats || {};
+    const wins = (s15.wins||0) + (s5.wins||0);
+    const losses = (s15.losses||0) + (s5.losses||0);
+    const total = wins + losses;
+    return {
+      total_pnl: ((s15.total_pnl||0) + (s5.total_pnl||0)),
+      win_rate: total > 0 ? Math.round(wins/total*1000)/10 : 0,
+      total_trades: (s15.total_trades||0) + (s5.total_trades||0),
+      wins, losses,
+      total_wallet: (d15.wallet||100) + (d5.wallet||100),
+      open_positions: (d15.positions||[]).length + (d5.positions||[]).length,
+    };
+  }
+
+  function renderBotCard(bot, d, colorClass) {
+    const prefix = 'b' + (bot === '15m' ? '15' : '5');
+    const s = d.stats || {};
+    const pnl = s.total_pnl ?? 0;
+    $(`${prefix}-wallet`).textContent = `$${(d.wallet ?? 100).toFixed(2)}`;
+    const pnlEl = $(`${prefix}-pnl`);
+    pnlEl.textContent = fmtPnl(pnl, true);
+    pnlEl.className = `val ${pnlClass(pnl)}`;
+    $(`${prefix}-wr`).textContent     = `${s.win_rate ?? 0}%`;
+    $(`${prefix}-trades`).textContent = s.total_trades ?? 0;
+    $(`${prefix}-open`).textContent   = (d.positions || []).length;
+  }
+
+  // ── Equity chart ──────────────────────────────────────────────────────────────
+  function renderChart(canvasId, trades, borderColor, bgColor, initWallet) {
+    const closed = trades.filter(t => t.action === 'close');
+    let equity = initWallet;
+    const labels = ['Start'];
+    const values = [initWallet];
+    closed.forEach((t, i) => {
+      equity = Math.round((equity + (t.pnl || 0)) * 1e6) / 1e6;
+      labels.push(`T${i + 1}`);
+      values.push(equity);
+    });
+
+    if (charts[canvasId]) {
+      charts[canvasId].data.labels = labels;
+      charts[canvasId].data.datasets[0].data = values;
+      charts[canvasId].update('none');
+      return;
+    }
+
+    charts[canvasId] = new Chart($(canvasId), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Wallet ($)',
+          data: values,
+          borderColor,
+          backgroundColor: bgColor,
+          fill: true,
+          tension: 0.35,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          borderWidth: 2,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        scales: {
+          x: { ticks: { color: '#8b949e', maxTicksLimit: 8 }, grid: { color: '#21262d' } },
+          y: { ticks: { color: '#8b949e', callback: v => `$${v}` }, grid: { color: '#21262d' } },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            mode: 'index', intersect: false,
+            callbacks: { label: ctx => ` $${ctx.parsed.y.toFixed(4)}` },
+          },
+        },
+      },
+    });
+  }
+
+  // ── Open positions table ──────────────────────────────────────────────────────
+  function renderPositions(pos15, pos5) {
+    const all = [
+      ...pos15.map(p => ({ ...p, _bot: '15m' })),
+      ...pos5.map(p =>  ({ ...p, _bot: '5m' })),
+    ];
+    const body = $('pos-body');
+    if (!all.length) {
+      body.innerHTML = '<tr><td class="empty" colspan="8">No open positions</td></tr>';
+      return;
+    }
+    body.innerHTML = all.map(p => `
+      <tr>
+        <td>${botBadge(p._bot)}</td>
+        <td><strong>${p.asset}</strong></td>
+        <td>${sideBadge(p.side)}</td>
+        <td>${p.entry_price.toFixed(4)}</td>
+        <td>$${p.size_usd.toFixed(2)}</td>
+        <td>${p.shares.toFixed(4)}</td>
+        <td style="color:var(--muted);font-size:0.78rem">${fmtTime(p.opened_at)}</td>
+        <td style="color:var(--muted);font-size:0.76rem;max-width:220px;
+                   overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          ${p.question}
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  // ── Closed trades table ───────────────────────────────────────────────────────
+  function renderTrades(t15, t5) {
+    const closed = [
+      ...t15.filter(t => t.action === 'close').map(t => ({ ...t, _bot: '15m' })),
+      ...t5.filter(t  => t.action === 'close').map(t => ({ ...t, _bot: '5m' })),
+    ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 100);
+
+    const body = $('trades-body');
+    if (!closed.length) {
+      body.innerHTML = '<tr><td class="empty" colspan="8">No closed trades yet</td></tr>';
+      return;
+    }
+    body.innerHTML = closed.map(t => {
+      const win = t.pnl > 0;
+      return `
+        <tr>
+          <td>${botBadge(t._bot)}</td>
+          <td style="color:var(--muted);font-size:0.78rem">${fmtTime(t.timestamp)}</td>
+          <td><strong>${t.asset}</strong></td>
+          <td>${sideBadge(t.side)}</td>
+          <td>${(t.entry_price ?? 0).toFixed(4)}</td>
+          <td>${t.price.toFixed(4)}</td>
+          <td>$${t.size_usd.toFixed(2)}</td>
+          <td style="font-weight:600;color:var(--${win ? 'green' : 'red'})">
+            ${fmtPnl(t.pnl)}
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  // ── Boot ──────────────────────────────────────────────────────────────────────
+  loadData();
+  setInterval(loadData, 5_000);   // live update every 5 s
+</script>
+</body>
+</html>
