@@ -14,17 +14,53 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 import httpx
 import websockets
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# ── Market start-time filter ──────────────────────────────────────────────────
+
+_ET = ZoneInfo("America/New_York")
+_MONTHS = {
+    "january":1,"february":2,"march":3,"april":4,"may":5,"june":6,
+    "july":7,"august":8,"september":9,"october":10,"november":11,"december":12,
+}
+
+def _market_started(question: str) -> bool:
+    m = re.search(r"(\w+)\s+(\d{1,2}),\s+(\d{1,2}):(\d{2})\s*(AM|PM)", question, re.I)
+    if m:
+        month_s, day_s, hr_s, min_s, ampm = m.groups()
+        hour, minute = int(hr_s), int(min_s)
+    else:
+        m = re.search(r"(\w+)\s+(\d{1,2}),\s+(\d{1,2})\s*(AM|PM)", question, re.I)
+        if not m:
+            return True
+        month_s, day_s, hr_s, ampm = m.groups()
+        hour, minute = int(hr_s), 0
+    month = _MONTHS.get(month_s.lower())
+    if not month:
+        return True
+    day = int(day_s)
+    if ampm.upper() == "PM" and hour != 12:
+        hour += 12
+    elif ampm.upper() == "AM" and hour == 12:
+        hour = 0
+    year = datetime.now(timezone.utc).year
+    try:
+        start_et = datetime(year, int(month), day, hour, minute, tzinfo=_ET)
+    except ValueError:
+        return True
+    return start_et.astimezone(timezone.utc) <= datetime.now(timezone.utc)
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
@@ -87,7 +123,6 @@ def _is_1h_market(question: str) -> bool:
     Match hourly markets: "Bitcoin Up or Down - March 8, 11PM ET"
     Exclude ranged markets: "Bitcoin Up or Down - March 8, 7:00PM-7:15PM ET"
     """
-    import re
     # If there's a time range (HH:MM AM/PM - HH:MM AM/PM), it's a 5/15-min market
     if re.search(r"\d+:\d+\s*(?:AM|PM)\s*[-–]", question, re.I):
         return False
@@ -139,6 +174,9 @@ def fetch_crypto_1h_markets() -> List[dict]:
                     continue
             except Exception:
                 pass
+
+        if not _market_started(q):
+            continue
 
         asset = _detect_asset(ql)
         if not asset:

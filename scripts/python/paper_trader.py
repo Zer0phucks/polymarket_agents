@@ -24,17 +24,71 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 import httpx
 import websockets
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# ── Market start-time filter ──────────────────────────────────────────────────
+
+_ET = ZoneInfo("America/New_York")
+_MONTHS = {
+    "january":1,"february":2,"march":3,"april":4,"may":5,"june":6,
+    "july":7,"august":8,"september":9,"october":10,"november":11,"december":12,
+}
+
+def _market_started(question: str) -> bool:
+    """
+    Parse the START time from a market title and return True only if that
+    time has already passed.  Unrecognised titles are allowed through.
+
+    Handles both formats:
+      "Bitcoin Up or Down - March 9, 10:00PM-10:15PM ET"  → start 10:00 PM ET
+      "Bitcoin Up or Down - March 9, 10PM ET"             → start 10:00 PM ET
+    """
+    # Try ranged format first: "March 9, 10:00PM-10:15PM ET"
+    m = re.search(
+        r"(\w+)\s+(\d{1,2}),\s+(\d{1,2}):(\d{2})\s*(AM|PM)",
+        question, re.I,
+    )
+    if m:
+        month_s, day_s, hr_s, min_s, ampm = m.groups()
+        hour, minute = int(hr_s), int(min_s)
+    else:
+        # Try single-hour format: "March 9, 10PM ET"
+        m = re.search(
+            r"(\w+)\s+(\d{1,2}),\s+(\d{1,2})\s*(AM|PM)",
+            question, re.I,
+        )
+        if not m:
+            return True  # can't parse → allow through
+        month_s, day_s, hr_s, ampm = m.groups()
+        hour, minute = int(hr_s), 0
+
+    month = _MONTHS.get(month_s.lower())
+    if not month:
+        return True
+    day = int(day_s)
+    if ampm.upper() == "PM" and hour != 12:
+        hour += 12
+    elif ampm.upper() == "AM" and hour == 12:
+        hour = 0
+
+    year = datetime.now(timezone.utc).year
+    try:
+        start_et = datetime(year, month, day, hour, minute, tzinfo=_ET)
+    except ValueError:
+        return True
+    return start_et.astimezone(timezone.utc) <= datetime.now(timezone.utc)
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
@@ -108,7 +162,6 @@ def _is_15min_window(question: str) -> bool:
     Return True if the question describes a 15-minute time window.
     Matches patterns like "7:00PM-7:15PM" or "7:00AM-7:15AM".
     """
-    import re
     m = re.search(r"(\d+):(\d+)\s*(AM|PM)\s*[-–]\s*(\d+):(\d+)\s*(AM|PM)", question, re.I)
     if not m:
         # Also accept questions that literally say "15 min" or similar
@@ -136,7 +189,6 @@ def fetch_crypto_15m_markets() -> List[dict]:
     Strategy: pull top-2000 markets by volume (20 fast requests) instead of
     paginating all 27,000+ markets on the platform.
     """
-    import re as _re
     log.info("Scanning Gamma API for 15-min crypto markets…")
     all_markets: List[dict] = []
 
@@ -193,6 +245,10 @@ def fetch_crypto_15m_markets() -> List[dict]:
                     continue
             except Exception:
                 pass  # if we can't parse the date, don't filter it out
+
+        # Skip markets that haven't started yet (pre-market prices are garbage)
+        if not _market_started(q):
+            continue
 
         # Must be a crypto asset
         asset = _detect_asset(ql)
